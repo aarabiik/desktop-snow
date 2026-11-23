@@ -216,7 +216,7 @@ public:
         std::vector<HWND> dead;
         for (auto& pair : windowDrifts) {
             HWND h = pair.first;
-            if (!IsWindow(h) || !IsWindowVisible(h) || IsIconic(h)) {
+            if (!IsWindow(h) || !IsWindowVisible(h) || IsIconic(h) || IsZoomed(h)) {
                 dead.push_back(h);
                 continue;
             }
@@ -235,7 +235,7 @@ public:
         EnumWindows([](HWND hwnd, LPARAM lParam) -> BOOL {
             auto self = (PhysicsEngine*)lParam;
             if (hwnd == self->ignoredHwnd || hwnd == self->settingsHwnd) return TRUE;
-            if (!IsWindowVisible(hwnd) || IsIconic(hwnd)) return TRUE;
+            if (!IsWindowVisible(hwnd) || IsIconic(hwnd) || IsZoomed(hwnd)) return TRUE;
 
             int cloaked = 0;
             DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &cloaked, sizeof(cloaked));

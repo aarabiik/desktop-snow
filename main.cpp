@@ -39,6 +39,7 @@ bool IsFullscreenGameOrApp() {
     // 2. Foreground Window Geometry check (handles Borderless Fullscreen & Windowed-Fullscreen games)
     HWND fg = GetForegroundWindow();
     if (!fg) return false;
+    if (fg == g_hwndOverlay || (g_dialog.hwnd && fg == g_dialog.hwnd)) return false;
 
     wchar_t cname[128] = {0};
     GetClassNameW(fg, cname, 128);
@@ -64,7 +65,14 @@ bool IsFullscreenGameOrApp() {
 }
 
 LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
-    if (msg == WM_TRAYICON) {
+    if (msg == WM_ERASEBKGND) {
+        return 1;
+    } else if (msg == WM_PAINT) {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hwnd, &ps);
+        EndPaint(hwnd, &ps);
+        return 0;
+    } else if (msg == WM_TRAYICON) {
         if (lp == WM_LBUTTONDBLCLK || lp == WM_LBUTTONUP) {
             g_dialog.Show();
         } else if (lp == WM_RBUTTONUP) {
@@ -123,7 +131,7 @@ HICON CreateSnowflakeIcon() {
     HFONT hOldFont = (HFONT)SelectObject(hdcMem, hFont);
     DrawTextW(hdcMem, L"❄", 1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
-    HBITMAP hMask = CreateCompatibleBitmap(hdcScreen, w, h);
+    HBITMAP hMask = CreateBitmap(w, h, 1, 1, NULL);
     ICONINFO ii = {0};
     ii.fIcon = TRUE;
     ii.hbmColor = hBmp;
@@ -141,9 +149,6 @@ HICON CreateSnowflakeIcon() {
 }
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
-    HDESK hdesk = OpenInputDesktop(0, FALSE, MAXIMUM_ALLOWED);
-    if (hdesk) SetThreadDesktop(hdesk);
-
     INITCOMMONCONTROLSEX icex;
     icex.dwSize = sizeof(INITCOMMONCONTROLSEX);
     icex.dwICC = ICC_BAR_CLASSES | ICC_STANDARD_CLASSES;
@@ -179,7 +184,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
     ShowWindow(g_hwndOverlay, SW_SHOWNOACTIVATE);
 
     HDC hdcScreen = GetDC(NULL);
-    g_renderer.Init(hdcScreen, screenW, screenH);
+    g_renderer.Init(hdcScreen, screenX, screenY, screenW, screenH);
     ReleaseDC(NULL, hdcScreen);
 
     g_physics.ignoredHwnd = g_hwndOverlay;
