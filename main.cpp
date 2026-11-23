@@ -47,6 +47,12 @@ bool IsFullscreenGameOrApp() {
         return false;
     }
 
+    // 3. Maximized & Fullscreen Application check
+    // If ANY foreground app is MAXIMIZED or covers the work area, the user does not see the desktop!
+    if (IsZoomed(fg)) {
+        return true;
+    }
+
     HMONITOR hMon = MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST);
     if (!hMon) return false;
 
@@ -56,8 +62,11 @@ bool IsFullscreenGameOrApp() {
     RECT r;
     GetWindowRect(fg, &r);
 
-    if (r.left <= mi.rcMonitor.left && r.top <= mi.rcMonitor.top &&
-        r.right >= mi.rcMonitor.right && r.bottom >= mi.rcMonitor.bottom) {
+    // If foreground window covers the entire monitor OR covers the entire work area:
+    if ((r.left <= mi.rcMonitor.left && r.top <= mi.rcMonitor.top &&
+         r.right >= mi.rcMonitor.right && r.bottom >= mi.rcMonitor.bottom) ||
+        (r.left <= mi.rcWork.left && r.top <= mi.rcWork.top &&
+         r.right >= mi.rcWork.right && r.bottom >= mi.rcWork.bottom)) {
         return true;
     }
 
@@ -149,6 +158,17 @@ HICON CreateSnowflakeIcon() {
 }
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
+    HANDLE hMutex = CreateMutexW(NULL, TRUE, L"DesktopSnowNative_SingleInstance_Mutex");
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+        HWND existing = FindWindowW(L"SnowSettingsDialogClass", NULL);
+        if (existing) {
+            ShowWindow(existing, SW_SHOW);
+            SetForegroundWindow(existing);
+        }
+        if (hMutex) CloseHandle(hMutex);
+        return 0;
+    }
+
     INITCOMMONCONTROLSEX icex;
     icex.dwSize = sizeof(INITCOMMONCONTROLSEX);
     icex.dwICC = ICC_BAR_CLASSES | ICC_STANDARD_CLASSES;
@@ -231,22 +251,22 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
 
         auto now = std::chrono::high_resolution_clock::now();
 
-        // 🎮 AUTO-GAME DETECTION (Zero CPU when playing games or full screen)
+        // 🎮 AUTO-GAME & FULLSCREEN DETECTION (Zero CPU when playing games or full screen)
         if (g_config.autoPauseInGames) {
             double gameCheckElapsed = std::chrono::duration<double, std::milli>(now - lastGameCheck).count();
-            if (gameCheckElapsed >= 250.0) {
+            if (gameCheckElapsed >= 100.0) {
                 isInGame = IsFullscreenGameOrApp();
                 lastGameCheck = now;
             }
 
             if (isInGame) {
                 if (!wasInGame) {
-                    // Wipe overlay cleanly so no ghost snow is visible in borderless games
+                    // Wipe overlay cleanly so no snow is visible in full screen / maximized apps!
                     g_renderer.Clear(g_hwndOverlay);
                     wasInGame = true;
                 }
                 // Deep sleep: LITERALLY 0.00% CPU USAGE
-                Sleep(200);
+                Sleep(100);
                 lastFrameTime = std::chrono::high_resolution_clock::now();
                 continue;
             }
