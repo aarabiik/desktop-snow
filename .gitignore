@@ -1,0 +1,12 @@
+# Build & temporary files
+*.o
+*.obj
+*.log
+*.tmp
+debug.log
+
+# IDE files
+.vscode/
+.idea/
+*.suo
+*.user
