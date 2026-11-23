@@ -107,12 +107,12 @@ public:
                         path.AddPolygon(pts.data(), (int)pts.size());
                         g.FillPath(&driftBody, &path);
 
-                        // Draw soft fluffy bumps along the top surface
-                        for (int i = 0; i < drift.binCount; i += 2) {
-                            if (drift.heights[i] > 1.5f) {
+                        // Draw soft fluffy bumps along the top surface (never at the extreme corners)
+                        for (int i = 3; i < drift.binCount - 3; i += 2) {
+                            if (drift.heights[i] > 1.8f) {
                                 float px = (float)drift.rect.left + i * WindowSnowdrift::BIN_WIDTH;
                                 float py = (float)drift.rect.top - drift.heights[i];
-                                float puffR = 3.5f + (float)(i % 3);
+                                float puffR = 3.0f + (float)(i % 2);
                                 g.FillEllipse(&driftFluff, px - puffR, py - puffR * 0.7f, puffR * 2.0f, puffR * 1.4f);
                             }
                         }

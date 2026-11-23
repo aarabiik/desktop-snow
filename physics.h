@@ -113,7 +113,7 @@ public:
         for (int d = -3; d <= 3; d++) {
             int b = centerBin + d;
             // Never deposit on extreme edges (so snow doesn't spill over)
-            if (b >= 2 && b < binCount - 2) {
+            if (b >= 4 && b < binCount - 4) {
                 heights[b] += amount * weights[d + 3];
             }
         }
@@ -153,14 +153,15 @@ public:
         }
 
         // 3. Taper edges cleanly to 0 (ABSOLUTELY NO SPILLING DOWN)
-        // Snow that slides to the outer edges simply vanishes!
         heights[0] = 0.0f;
         if (binCount > 1) heights[1] = 0.0f;
-        if (binCount > 2) heights[2] = std::min(heights[2], 2.0f);
+        if (binCount > 2) heights[2] = 0.0f;
+        if (binCount > 3) heights[3] = std::min(heights[3], 1.5f);
 
         heights[binCount - 1] = 0.0f;
         if (binCount > 1) heights[binCount - 2] = 0.0f;
-        if (binCount > 2) heights[binCount - 3] = std::min(heights[binCount - 3], 2.0f);
+        if (binCount > 2) heights[binCount - 3] = 0.0f;
+        if (binCount > 3) heights[binCount - 4] = std::min(heights[binCount - 4], 1.5f);
 
         // 4. Max drift height clamp: extra snow simply disappears
         for (int i = 0; i < binCount; i++) {
@@ -308,7 +309,10 @@ public:
                 continue;
             }
 
-            // 2. WINDOW COLLISION & PHYSICAL BOUNCING ("физика отбивания от окон"):
+            // 2. WINDOW COLLISION:
+            // When a snowflake touches ANY part of a window (roof, side border, or glass),
+            // IT IMMEDIATELY DISSOLVES AND RESETS TO THE TOP!
+            // Absolutely ZERO bouncing swarms, ZERO accumulation on sides or roofs!
             bool resetFlake = false;
 
             for (auto& pair : windowDrifts) {
@@ -320,66 +324,33 @@ public:
                 float B = (float)wr.bottom;
                 float r = f.size;
 
-                // 2A. ROOF & SNOWDRIFT MOUND INTERACTION:
-                if (nextX >= L - 2.0f && nextX <= R + 2.0f) {
+                // 2A. ROOF & SNOWDRIFT:
+                if (nextX >= L && nextX <= R) {
                     float relX = nextX - L;
                     float pileHeight = drift.GetHeightAt(relX);
                     float surfaceY = T - pileHeight;
 
-                    // If flake crosses the roof / mound surface from above:
+                    // If flake touches the roof / mound surface:
                     if (f.y <= surfaceY + 6.0f && nextY >= surfaceY - r) {
-                        // Deposit snow onto the roof mound:
-                        if (cfg.enableDrifts && pileHeight < cfg.maxDriftHeight) {
-                            drift.Deposit(relX, f.size * 0.75f * cfg.driftGrowthRate);
+                        // Gently deposit into the snowdrift only if enabled and growth rate > 0:
+                        if (cfg.enableDrifts && cfg.driftGrowthRate > 0.01f && pileHeight < cfg.maxDriftHeight) {
+                            drift.Deposit(relX, f.size * 0.15f * cfg.driftGrowthRate);
                         }
 
-                        // Physical bounce off the roof / snow mound!
-                        float relNorm = (relX - (R - L) * 0.5f) / std::max(1.0f, (R - L) * 0.5f); // -1.0 to +1.0
-                        
-                        // Portion of flakes settle into the snow mound, while others bounce off:
-                        if (std::abs(relNorm) < 0.7f && f.vy < 100.0f && (rand() % 100 < 45)) {
-                            f.Reset(screenW, screenH, true, cfg.flakeSize);
-                            resetFlake = true;
-                            break;
-                        } else {
-                            // PHYSICAL BOUNCE ("отбиваются от крыши и сугробов")!
-                            nextY = surfaceY - r - 1.0f;
-                            f.vy = -std::abs(f.vy) * 0.42f; // Rebound upwards
-                            f.vx = f.vx * 0.5f + relNorm * (30.0f + (float)(rand() % 25)); // Deflect outwards
-                            if (std::abs(drift.vx) > 5.0f || std::abs(drift.vy) > 5.0f) {
-                                f.vx += drift.vx * 0.5f;
-                                f.vy += drift.vy * 0.5f;
-                            }
-                        }
+                        // IMMEDIATELY DISSOLVE INTO THE DRIFT (No bouncing, no accumulation!)
+                        f.Reset(screenW, screenH, true, cfg.flakeSize);
+                        resetFlake = true;
+                        break;
                     }
                 }
 
-                // 2B. SIDE BORDER BOUNCING ("отбиваются от боковых краев окон"):
-                if (nextY >= T && nextY <= B) {
-                    // Left edge bounce
-                    if (f.x <= L && nextX >= L - r) {
-                        nextX = L - r - 1.5f;
-                        f.vx = -std::abs(f.vx) * 0.65f - (25.0f + (float)(rand() % 20));
-                        f.vy *= 0.85f;
-                        if (drift.vx < -5.0f) f.vx += drift.vx * 0.6f;
-                    }
-                    // Right edge bounce
-                    else if (f.x >= R && nextX <= R + r) {
-                        nextX = R + r + 1.5f;
-                        f.vx = std::abs(f.vx) * 0.65f + (25.0f + (float)(rand() % 20));
-                        f.vy *= 0.85f;
-                        if (drift.vx > 5.0f) f.vx += drift.vx * 0.6f;
-                    }
-                    // Inside window body (anti-penetration safety push):
-                    else if (nextX > L && nextX < R) {
-                        if (nextX - L < R - nextX) {
-                            nextX = L - r - 1.5f;
-                            f.vx = -std::abs(f.vx) * 0.6f - 20.0f;
-                        } else {
-                            nextX = R + r + 1.5f;
-                            f.vx = std::abs(f.vx) * 0.6f + 20.0f;
-                        }
-                    }
+                // 2B. SIDE BORDERS & WINDOW BODY:
+                // If flake touches the sides or body anywhere [L - r, R + r, T, B]:
+                // IT IMMEDIATELY DISSOLVES! ZERO STICKING, ZERO ACCUMULATION DOWN THE SIDES!
+                if (nextX >= L - r && nextX <= R + r && nextY >= T && nextY <= B) {
+                    f.Reset(screenW, screenH, true, cfg.flakeSize);
+                    resetFlake = true;
+                    break;
                 }
             }
 
